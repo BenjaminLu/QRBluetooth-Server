@@ -51,8 +51,6 @@ public class MainActivity extends Activity
         {
             String message = msg.getData().getString("message");
             statusTextView.setText(message);
-            String response = "Sent from " + deviceName;
-            connectedThread.write(response.getBytes());
         }
     };
 
@@ -210,6 +208,7 @@ public class MainActivity extends Activity
                 // MY_UUID is the app's UUID string, also used by the client code
                 tmp = bluetoothAdapter.listenUsingRfcommWithServiceRecord(deviceName, uuid);
             } catch (IOException e) {
+                e.printStackTrace();
             }
             mmServerSocket = tmp;
         }
@@ -224,6 +223,7 @@ public class MainActivity extends Activity
                     connectedThread = new ConnectedThread(socket);
                     connectedThread.start();
                 } catch (IOException e) {
+                    e.printStackTrace();
                     break;
                 }
 
@@ -238,6 +238,7 @@ public class MainActivity extends Activity
             try {
                 mmServerSocket.close();
             } catch (IOException e) {
+                e.printStackTrace();
             }
         }
     }
@@ -268,6 +269,7 @@ public class MainActivity extends Activity
                 tmpIn = socket.getInputStream();
                 tmpOut = socket.getOutputStream();
             } catch (IOException e) {
+                e.printStackTrace();
             }
 
             mmInStream = tmpIn;
@@ -276,30 +278,42 @@ public class MainActivity extends Activity
 
         public void run()
         {
-            byte[] buffer = new byte[1024];  // buffer store for the stream
+            byte[] buffer = new byte[4096];  // buffer store for the stream
+            StringBuffer sb = new StringBuffer();
+            StringBuilder stringBuilder = new StringBuilder();
             int bytes; // bytes returned from read()
 
             // Keep listening to the InputStream until an exception occurs
             while (true) {
                 try {
                     // Read from the InputStream
-                    bytes = mmInStream.read(buffer);
-                    // Send the obtained bytes to the UI activity
-                    final String message = new String(buffer, "UTF-8");
-                    mHandler.post(new Runnable()
-                    {
-                        @Override
-                        public void run()
+                    if(mmSocket.isConnected()) {
+                        bytes = mmInStream.read(buffer);
+                        // Send the obtained bytes to the UI activity
+                        final String message = new String(buffer, 0, bytes);
+                        mHandler.post(new Runnable()
                         {
-                            statusTextView.setText(message);
-                        }
-                    });
-                    Message m = new Message();
-                    Bundle b = new Bundle();
-                    b.putString("message", message);
-                    m.setData(b);
-                    mHandler.sendMessage(m);
+                            @Override
+                            public void run()
+                            {
+                                statusTextView.setText(message);
+                            }
+                        });
+                        Message m = new Message();
+                        Bundle b = new Bundle();
+                        b.putString("message", message);
+                        m.setData(b);
+                        mHandler.sendMessage(m);
+
+                        //response
+                        String response = "Sent from " + deviceName;
+                        connectedThread.write(response.getBytes());
+                        mmSocket.close();
+                    } else {
+                        break;
+                    }
                 } catch (IOException e) {
+                    e.printStackTrace();
                     break;
                 }
             }
@@ -311,6 +325,7 @@ public class MainActivity extends Activity
             try {
                 mmOutStream.write(bytes);
             } catch (IOException e) {
+                e.printStackTrace();
             }
         }
 
@@ -320,6 +335,7 @@ public class MainActivity extends Activity
             try {
                 mmSocket.close();
             } catch (IOException e) {
+                e.printStackTrace();
             }
         }
     }
