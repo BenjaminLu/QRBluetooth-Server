@@ -16,6 +16,7 @@ import android.support.v7.app.AlertDialog;
 import android.support.v7.app.AppCompatActivity;
 import android.view.Menu;
 import android.view.MenuItem;
+import android.view.View;
 import android.widget.ArrayAdapter;
 import android.widget.ImageView;
 import android.widget.ListView;
@@ -46,28 +47,56 @@ public class MainActivity extends AppCompatActivity
     String deviceName;
     String deviceAddress;
     private ImageView imageView;
+    AcceptThread acceptThread;
     ConnectedThread connectedThread;
-    private BluetoothSocket mmSocket;
+    private BluetoothServerSocket bluetoothServerSocket;
+    private BluetoothSocket bluetoothSocket;
     private InputStream mmInStream;
     private OutputStream mmOutStream;
-    AlertDialog.Builder alertDialog;
+    boolean acceptThreadIsStart = false;
     private final Handler mHandler = new Handler()
     {
         public void handleMessage(Message msg)
         {
             String message = msg.getData().getString("message");
             statusTextView.setText(message);
-           showDialog();
+            showDialog();
         }
     };
 
     private void showDialog()
     {
-        if(!(this.isFinishing()))
-        {
+        if (!(this.isFinishing())) {
+            AlertDialog alertDialog = new AlertDialog.Builder(MainActivity.this).setTitle("確認訊息").setMessage("確定為消費者增加點數?")
+                    .setPositiveButton("好", new DialogInterface.OnClickListener()
+                    {
+                        @Override
+                        public void onClick(DialogInterface dialog, int which)
+                        {
+                            //response
+                            String response = "Sent from " + deviceName;
+                            try {
+                                mmOutStream.write(response.getBytes());
+                                bluetoothSocket.close();
+                                acceptThread.close();
+                                if (receiverIsRegistered) {
+                                    unregisterReceiver(mReceiver);
+                                    receiverIsRegistered = false;
+                                }
+                                finish();
+                            } catch (IOException e) {
+                                e.printStackTrace();
+                            }
+                            dialog.dismiss();
+                            System.exit(0);
+                        }
+                    }).create();
+
+            alertDialog.setCanceledOnTouchOutside(false);
             alertDialog.show();
         }
     }
+
     private final BroadcastReceiver mReceiver = new BroadcastReceiver()
     {
         @Override
@@ -80,15 +109,18 @@ public class MainActivity extends AppCompatActivity
                 switch (state) {
                     case BluetoothAdapter.STATE_OFF:
                         statusTextView.setText("Bluetooth off");
-                        arrayAdapter.clear();
                         break;
                     case BluetoothAdapter.STATE_TURNING_OFF:
                         statusTextView.setText("Turning Bluetooth off...");
                         break;
                     case BluetoothAdapter.STATE_ON:
                         statusTextView.setText("Bluetooth on");
-                        showDevices();
-                        bluetoothAdapter.startDiscovery();
+                        deviceName = bluetoothAdapter.getName();
+                        deviceAddress = bluetoothAdapter.getAddress();
+                        Bitmap QRcodeBitmap = QRCode.from(deviceAddress).bitmap();
+                        imageView.setImageBitmap(QRcodeBitmap);
+                        acceptThread = new AcceptThread();
+                        acceptThread.start();
                         break;
                     case BluetoothAdapter.STATE_TURNING_ON:
                         statusTextView.setText("Turning Bluetooth on...");
@@ -97,26 +129,36 @@ public class MainActivity extends AppCompatActivity
             } else if (BluetoothAdapter.ACTION_DISCOVERY_STARTED.equals(action)) {
             } else if (BluetoothAdapter.ACTION_DISCOVERY_FINISHED.equals(action)) {
             } else if (BluetoothDevice.ACTION_FOUND.equals(action)) {
-                BluetoothDevice device = (BluetoothDevice) intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
-                int size = arrayAdapter.getCount();
-                for (int i = 0; i < size; i++) {
-                    String row = arrayAdapter.getItem(i);
-                    if (row.contains(device.getAddress())) {
-                        return;
-                    }
-                }
-                arrayAdapter.add(device.getName() + "\n" + device.getAddress());
             }
         }
     };
 
     @Override
+    protected void onResume()
+    {
+        System.out.println("onResume");
+        super.onResume();
+    }
+
+    @Override
+    protected void onPause()
+    {
+        System.out.println("onPause");
+        super.onPause();
+    }
+
+    @Override
     protected void onDestroy()
     {
+        System.out.println("onDestroy");
         super.onDestroy();
-        if (receiverIsRegistered) {
+
+        if(receiverIsRegistered) {
             unregisterReceiver(mReceiver);
+            receiverIsRegistered = false;
         }
+
+        acceptThread.close();
     }
 
     @Override
@@ -124,26 +166,7 @@ public class MainActivity extends AppCompatActivity
     {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-
-        alertDialog = new AlertDialog.Builder(MainActivity.this).setTitle("確認訊息")
-                .setMessage("確定為消費者增加點數?").setPositiveButton("好", new DialogInterface.OnClickListener()
-        {
-            @Override
-            public void onClick(DialogInterface dialog, int which)
-            {
-                //response
-                String response = "Sent from " + deviceName;
-                try {
-                    mmOutStream.write(response.getBytes());
-                    mmSocket.close();
-                    finish();
-                    System.exit(0);
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-            }
-        });
-
+        System.out.println("onCreate");
         arrayAdapter = new ArrayAdapter<String>(this, android.R.layout.simple_list_item_1);
         statusTextView = (TextView) findViewById(R.id.status);
         imageView = (ImageView) findViewById(R.id.imageView);
@@ -152,10 +175,6 @@ public class MainActivity extends AppCompatActivity
             statusTextView.setText("Not support Bluetooth.");
             Toast.makeText(this, "Not support Bluetooth.", Toast.LENGTH_SHORT);
         } else {
-            deviceName = bluetoothAdapter.getName();
-            deviceAddress = bluetoothAdapter.getAddress();
-            Bitmap QRcodeBitmap = QRCode.from(deviceAddress).bitmap();
-            imageView.setImageBitmap(QRcodeBitmap);
             IntentFilter filter = new IntentFilter();
             filter.addAction(BluetoothAdapter.ACTION_STATE_CHANGED);
             filter.addAction(BluetoothDevice.ACTION_FOUND);
@@ -165,13 +184,16 @@ public class MainActivity extends AppCompatActivity
             receiverIsRegistered = true;
             if (bluetoothAdapter.isEnabled()) {
                 statusTextView.setText("Bluetooth on");
-                bluetoothAdapter.startDiscovery();
-                showDevices();
-                new AcceptThread().start();
+                deviceName = bluetoothAdapter.getName();
+                deviceAddress = bluetoothAdapter.getAddress();
+                Bitmap QRcodeBitmap = QRCode.from(deviceAddress).bitmap();
+                imageView.setImageBitmap(QRcodeBitmap);
+                acceptThread = new AcceptThread();
+                acceptThread.start();
             } else {
                 statusTextView.setText("Bluetooth off");
-                Intent turnOnIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
-                startActivityForResult(turnOnIntent, REQUEST_ENABLE_BT);
+                Intent i = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
+                startActivityForResult(i, REQUEST_ENABLE_BT);
             }
         }
     }
@@ -181,27 +203,11 @@ public class MainActivity extends AppCompatActivity
     {
         switch (requestCode) {
             case REQUEST_ENABLE_BT:
-                new AcceptThread().start();
-                break;
-        }
-    }
-
-    private void showDevices()
-    {
-        Set<BluetoothDevice> pairedDevices = bluetoothAdapter.getBondedDevices();
-        if (pairedDevices.size() > 0) {
-            // Loop through paired devices
-            for (BluetoothDevice device : pairedDevices) {
-                // Add the name and address to an array adapter to show in a ListView
-                int size = arrayAdapter.getCount();
-                for (int i = 0; i < size; i++) {
-                    String row = arrayAdapter.getItem(i);
-                    if (row.contains(device.getAddress())) {
-                        return;
-                    }
+                if (resultCode == RESULT_OK) {
+                } else {
+                    finish();
                 }
-                arrayAdapter.add(device.getName() + "\n" + device.getAddress());
-            }
+                break;
         }
     }
 
@@ -231,46 +237,48 @@ public class MainActivity extends AppCompatActivity
 
     private class AcceptThread extends Thread
     {
-        private BluetoothServerSocket mmServerSocket;
-
-        public AcceptThread()
-        {
-            // Use a temporary object that is later assigned to mmServerSocket,
-            // because mmServerSocket is final
-            try {
-                // MY_UUID is the app's UUID string, also used by the client code
-                mmServerSocket = bluetoothAdapter.listenUsingRfcommWithServiceRecord(deviceName, uuid);
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-        }
-
         public void run()
         {
             // Keep listening until exception occurs or a socket is returned
-            while (true) {
-                BluetoothSocket socket = null;
+            // MY_UUID is the app's UUID string, also used by the client code
+            acceptThreadIsStart = true;
+            if (bluetoothAdapter.isEnabled()) {
                 try {
-                    if(mmServerSocket != null) {
-                        socket = mmServerSocket.accept();
-                        connectedThread = new ConnectedThread(socket);
-                        connectedThread.start();
+                    bluetoothServerSocket = bluetoothAdapter.listenUsingRfcommWithServiceRecord(deviceName, uuid);
+                    if (bluetoothServerSocket != null) {
+                        BluetoothSocket socket = bluetoothServerSocket.accept();
+                        if(socket != null) {
+                            mHandler.post(new Runnable()
+                            {
+                                @Override
+                                public void run()
+                                {
+                                    statusTextView.setText("Accept");
+                                }
+                            });
+                            connectedThread = new ConnectedThread(socket);
+                            connectedThread.start();
+                            acceptThreadIsStart = false;
+                        }
                     }
                 } catch (IOException e) {
+                    acceptThreadIsStart = false;
                     e.printStackTrace();
-                    break;
                 }
-
             }
+
         }
 
         /**
          * Will cancel the listening socket, and cause the thread to finish
          */
-        public void cancel()
+        public void close()
         {
             try {
-                mmServerSocket.close();
+                if (bluetoothServerSocket != null) {
+                    bluetoothServerSocket.close();
+                    acceptThreadIsStart = false;
+                }
             } catch (IOException e) {
                 e.printStackTrace();
             }
@@ -279,52 +287,73 @@ public class MainActivity extends AppCompatActivity
 
     private class ConnectedThread extends Thread
     {
+        boolean isSuccess = false;
         public ConnectedThread(BluetoothSocket socket)
         {
-            mmSocket = socket;
+            bluetoothSocket = socket;
             mHandler.post(new Runnable()
             {
                 @Override
                 public void run()
                 {
-                    statusTextView.setText("Connected");
+                    statusTextView.setText("Connecting");
                 }
             });
-
-            // Get the input and output streams, using temp objects because
-            // member streams are final
-            try {
-                mmInStream = socket.getInputStream();
-                mmOutStream = socket.getOutputStream();
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
         }
 
         public void run()
         {
-            byte[] buffer = new byte[4096];  // buffer store for the stream
+            byte[] buffer = new byte[1024];  // buffer store for the stream
             int bytes; // bytes returned from read()
-
-            // Read from the InputStream
-            if(mmSocket.isConnected()) {
-                try {
-                    bytes = mmInStream.read(buffer);
-                    // Send the obtained bytes to the UI activity
-                    String message = new String(buffer, "UTF-8");
-                    Message m = new Message();
-                    Bundle b = new Bundle();
-                    b.putString("message", message);
-                    m.setData(b);
-                    mHandler.sendMessage(m);
-                } catch (IOException e) {
-                    try {
-                        mmSocket.close();
-                    } catch (IOException e1) {
-                        e1.printStackTrace();
+            isSuccess = false;
+            try {
+                mmInStream = bluetoothSocket.getInputStream();
+                mmOutStream = bluetoothSocket.getOutputStream();
+                bytes = mmInStream.read(buffer);
+                isSuccess = true;
+                mHandler.post(new Runnable()
+                {
+                    @Override
+                    public void run()
+                    {
+                        statusTextView.setText("Connected");
                     }
-                    e.printStackTrace();
+                });
+                // Send the obtained bytes to the UI activity
+                String message = new String(buffer, "UTF-8");
+                Message m = new Message();
+                Bundle b = new Bundle();
+                b.putString("message", message);
+                m.setData(b);
+                mHandler.sendMessage(m);
+            } catch (IOException e) {
+                mHandler.post(new Runnable()
+                {
+                    @Override
+                    public void run()
+                    {
+                        statusTextView.setText("Read Fail");
+                    }
+                });
+                try {
+                    mmInStream.close();
+                    mmOutStream.close();
+                    bluetoothServerSocket.close();
+                    acceptThread = new AcceptThread();
+                    acceptThread.start();
+                    mHandler.post(new Runnable()
+                    {
+                        @Override
+                        public void run()
+                        {
+                            statusTextView.setText("Restart Accept Thread");
+                        }
+                    });
+                } catch (IOException e1) {
+                    e1.printStackTrace();
                 }
+
+                e.printStackTrace();
             }
         }
 
@@ -342,7 +371,7 @@ public class MainActivity extends AppCompatActivity
         public void cancel()
         {
             try {
-                mmSocket.close();
+                bluetoothSocket.close();
             } catch (IOException e) {
                 e.printStackTrace();
             }
