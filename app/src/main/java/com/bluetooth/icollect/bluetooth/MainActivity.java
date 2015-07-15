@@ -11,27 +11,24 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.graphics.Bitmap;
 import android.os.Bundle;
+import android.os.Handler;
 import android.os.Message;
 import android.support.v7.app.AlertDialog;
 import android.support.v7.app.AppCompatActivity;
 import android.view.Menu;
 import android.view.MenuItem;
-import android.view.View;
 import android.widget.ArrayAdapter;
 import android.widget.ImageView;
-import android.widget.ListView;
 import android.widget.TextView;
 import android.widget.Toast;
+
+import net.glxn.qrgen.android.QRCode;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.Set;
 import java.util.UUID;
-
-import android.os.Handler;
-
-import net.glxn.qrgen.android.QRCode;
 
 
 public class MainActivity extends AppCompatActivity
@@ -153,7 +150,7 @@ public class MainActivity extends AppCompatActivity
         System.out.println("onDestroy");
         super.onDestroy();
 
-        if(receiverIsRegistered) {
+        if (receiverIsRegistered) {
             unregisterReceiver(mReceiver);
             receiverIsRegistered = false;
         }
@@ -247,7 +244,7 @@ public class MainActivity extends AppCompatActivity
                     bluetoothServerSocket = bluetoothAdapter.listenUsingInsecureRfcommWithServiceRecord(deviceName, uuid);
                     if (bluetoothServerSocket != null) {
                         BluetoothSocket socket = bluetoothServerSocket.accept();
-                        if(socket != null) {
+                        if (socket != null) {
                             mHandler.post(new Runnable()
                             {
                                 @Override
@@ -290,6 +287,7 @@ public class MainActivity extends AppCompatActivity
     private class ConnectedThread extends Thread
     {
         boolean isSuccess = false;
+
         public ConnectedThread(BluetoothSocket socket)
         {
             bluetoothSocket = socket;
@@ -321,7 +319,7 @@ public class MainActivity extends AppCompatActivity
                         } catch (InterruptedException e) {
                             e.printStackTrace();
                         }
-                        if(!isSuccess) {
+                        if (!isSuccess) {
                             try {
                                 mmInStream.close();
                                 mmOutStream.close();
