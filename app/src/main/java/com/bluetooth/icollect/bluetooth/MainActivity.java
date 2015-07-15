@@ -244,7 +244,7 @@ public class MainActivity extends AppCompatActivity
             acceptThreadIsStart = true;
             if (bluetoothAdapter.isEnabled()) {
                 try {
-                    bluetoothServerSocket = bluetoothAdapter.listenUsingRfcommWithServiceRecord(deviceName, uuid);
+                    bluetoothServerSocket = bluetoothAdapter.listenUsingInsecureRfcommWithServiceRecord(deviceName, uuid);
                     if (bluetoothServerSocket != null) {
                         BluetoothSocket socket = bluetoothServerSocket.accept();
                         if(socket != null) {
@@ -256,9 +256,11 @@ public class MainActivity extends AppCompatActivity
                                     statusTextView.setText("Accept");
                                 }
                             });
-                            connectedThread = new ConnectedThread(socket);
-                            connectedThread.start();
-                            acceptThreadIsStart = false;
+                            if (socket.isConnected()) {
+                                connectedThread = new ConnectedThread(socket);
+                                connectedThread.start();
+                                acceptThreadIsStart = false;
+                            }
                         }
                     }
                 } catch (IOException e) {
@@ -303,12 +305,44 @@ public class MainActivity extends AppCompatActivity
 
         public void run()
         {
-            byte[] buffer = new byte[1024];  // buffer store for the stream
+            byte[] buffer = new byte[10240];  // buffer store for the stream
             int bytes; // bytes returned from read()
             isSuccess = false;
             try {
                 mmInStream = bluetoothSocket.getInputStream();
                 mmOutStream = bluetoothSocket.getOutputStream();
+                Thread watchDogThread = new Thread(new Runnable()
+                {
+                    @Override
+                    public void run()
+                    {
+                        try {
+                            Thread.sleep(3000);
+                        } catch (InterruptedException e) {
+                            e.printStackTrace();
+                        }
+                        if(!isSuccess) {
+                            try {
+                                mmInStream.close();
+                                mmOutStream.close();
+                                bluetoothServerSocket.close();
+                                acceptThread = new AcceptThread();
+                                acceptThread.start();
+                                mHandler.post(new Runnable()
+                                {
+                                    @Override
+                                    public void run()
+                                    {
+                                        statusTextView.setText("Restart Accept Thread");
+                                    }
+                                });
+                            } catch (IOException e) {
+                                e.printStackTrace();
+                            }
+                        }
+                    }
+                });
+                watchDogThread.start();
                 bytes = mmInStream.read(buffer);
                 isSuccess = true;
                 mHandler.post(new Runnable()
@@ -335,6 +369,7 @@ public class MainActivity extends AppCompatActivity
                         statusTextView.setText("Read Fail");
                     }
                 });
+                /*
                 try {
                     mmInStream.close();
                     mmOutStream.close();
@@ -352,6 +387,7 @@ public class MainActivity extends AppCompatActivity
                 } catch (IOException e1) {
                     e1.printStackTrace();
                 }
+                */
 
                 e.printStackTrace();
             }
